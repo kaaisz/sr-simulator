@@ -571,7 +571,7 @@ td.win { color: var(--ok); font-weight: 700; }
 </main>
 
 <!-- caption bar: real DOM live region (aria-live=polite), mirrors the simulated speech -->
-<div class="captionbar" id="captionbar" hidden>
+<div class="captionbar" id="captionbar" role="region" aria-label="読み上げ字幕" data-i18n-arialabel="captionLabel" hidden>
   <div class="inner">
     <p class="bar-label" data-i18n="captionLabel">読み上げ字幕</p>
     <p class="hist" id="cap-hist1" aria-hidden="true">&nbsp;</p>
@@ -836,6 +836,11 @@ function renderLang() {
   for (var i = 0; i < nodes.length; i++) {
     var key = nodes[i].getAttribute('data-i18n');
     if (I18N[state.lang][key] !== undefined) nodes[i].textContent = I18N[state.lang][key];
+  }
+  var ariaNodes = document.querySelectorAll('[data-i18n-arialabel]');
+  for (var j = 0; j < ariaNodes.length; j++) {
+    var akey = ariaNodes[j].getAttribute('data-i18n-arialabel');
+    if (I18N[state.lang][akey] !== undefined) ariaNodes[j].setAttribute('aria-label', I18N[state.lang][akey]);
   }
   var stage = $('stage');
   stage.setAttribute('aria-roledescription', t('stageRoleDesc'));
