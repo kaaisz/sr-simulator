@@ -1,71 +1,107 @@
-# AIの初回出力（v1）に含まれていたaxe違反 — 定量データ
+<!-- Japanese version: v1-initial-output-axe-violations.ja.md -->
 
-- 対象コミット: `5e1be2c`（v1: スクリーンリーダー体験シミュレータ初版実装, 2026-07-06T02:01:48+09:00）
-- 生成モデル: Claude Fable 5
-- 監査ツール: axe-core 4.12.1 / chrome-headless（Chrome 149.0.7827.201, ChromeDriver 149.0.7827.155）
-- 修正コミット: `2d62bd6`（v1-audit, 2026-07-06T02:25:23+09:00）
-- 本ドキュメント作成方法: `git show 5e1be2c:index.html` でv1時点のファイルを復元し、
-  作業ツリーとは別ポートで再度サーブして実際にaxeを再実行し、数値を実測した
-  （記憶や会話ログの要約ではなく、この文書作成時点での再現実行に基づく）。
+# Axe violations present in the AI's initial output (v1) — quantitative data
 
-## 結論（要約）
+- Target commit: `5e1be2c` (v1: initial implementation of the screen-reader
+  experience simulator, 2026-07-06T02:01:48+09:00)
+- Generating model: Claude Fable 5
+- Audit tool: axe-core 4.12.1 / chrome-headless (Chrome 149.0.7827.201,
+  ChromeDriver 149.0.7827.155)
+- Fix commit: `2d62bd6` (v1-audit, 2026-07-06T02:25:23+09:00)
+- How this document was produced: the v1-era file was restored with
+  `git show 5e1be2c:index.html`, served again on a separate port from the
+  working tree, and axe was actually re-run against it to measure the
+  figures below (these are based on a re-run performed while writing this
+  document, not a summary recalled from memory or chat logs).
 
-| 監査方法 | 検出された違反 |
+## Conclusion (summary)
+
+| Audit method | Violations found |
 |---|---|
-| `npx axe <url>` によるCLI単純監査（初期表示のみ） | **0件** |
-| 実際の操作を再現した5状態それぞれでの監査 | **1ルール種別 × 3状態 = 3インスタンス** |
+| CLI single-pass audit via `npx axe <url>` (initial load only) | **0** |
+| Audit of each of the 5 states that reproduce real interaction | **1 rule type × 3 states = 3 instances** |
 
-CLIの単純な1回きりの監査では違反0だったが、これは偽陰性だった。シミュレータ画面に遷移して初めてDOMに現れる要素に、実際には未修正のランドマーク違反が1件存在していた。
+The simple, one-shot CLI audit reported 0 violations, but this was a false
+negative. An element that only enters the DOM once the user navigates into
+the simulator screen carried one unresolved landmark violation.
 
-## 検証した5状態と結果
+## The 5 states verified, and their results
 
-| # | 状態 | 違反数 | ルールID | 深刻度 |
+| # | State | Violations | Rule ID | Impact |
 |---|---|---|---|---|
-| 1 | イントロ画面（初期表示） | 0 | — | — |
-| 2 | シミュレータ / BEFORE / ブラー中 | 1 | `region` | moderate |
-| 3 | シミュレータ / BEFORE完了・種明かし後 | 1 | `region` | moderate |
-| 4 | リザルト画面 | 0 | — | — |
-| 5 | シミュレータ / BEFORE / 英語表示 | 1 | `region` | moderate |
+| 1 | Intro screen (initial load) | 0 | — | — |
+| 2 | Simulator / BEFORE / blurred | 1 | `region` | moderate |
+| 3 | Simulator / BEFORE complete, revealed | 1 | `region` | moderate |
+| 4 | Result screen | 0 | — | — |
+| 5 | Simulator / BEFORE / English display | 1 | `region` | moderate |
 
-検証した5状態のうち3状態（60%）で同一ルールの違反が検出された。ユニークなルール種別は1つ（`region`）。
+The same rule's violation was detected in 3 of the 5 states verified
+(60%). One unique rule type (`region`).
 
-## 違反の詳細
+## Violation detail
 
-- **ルール**: `region` — "All page content should be contained by landmarks"
-- **該当要素**: `<p class="bar-label">読み上げ字幕</p>`（画面下部に固定表示される読み上げ字幕バーのラベル。英語表示時は `Speech captions`）
-- **セレクタ**: `.bar-label`
-- **タグ**: `cat.keyboard`, `best-practice`, `RGAAv4`, `RGAA-9.2.1`
+- **Rule**: `region` — "All page content should be contained by landmarks"
+- **Affected element**: `<p class="bar-label">読み上げ字幕</p>` (the label
+  on the fixed caption bar at the bottom of the screen; reads "Speech
+  captions" in English display)
+- **Selector**: `.bar-label`
+- **Tags**: `cat.keyboard`, `best-practice`, `RGAAv4`, `RGAA-9.2.1`
 - **helpUrl**: https://dequeuniversity.com/rules/axe/4.12/region?application=axeAPI
 
-### 原因
+### Root cause
 
-固定表示の字幕バー（`#captionbar`）自体にランドマークロールが付与されておらず、内部の "読み上げ字幕" というテキストがどのランドマーク（`header`/`main`/`nav`/`footer`/`role="region"`等）にも属さない状態でDOMに存在していた。
+The fixed caption bar (`#captionbar`) itself had no landmark role, so the
+"読み上げ字幕" (Speech captions) text inside it existed in the DOM without
+belonging to any landmark (`header`/`main`/`nav`/`footer`/`role="region"`,
+etc.).
 
-### なぜCLIの初期表示監査では検出されなかったか
+### Why the CLI's initial-load audit missed it
 
-字幕バーは `hidden` 属性によりイントロ画面では非表示になっている。「体験をはじめる」ボタンを押してシミュレータ画面に遷移すると、JSが `hidden` を外して初めてDOM上に出現する。axeは非表示要素を評価対象から除外するため、単一URLへの初回ロードのみを見るCLI監査（`npx axe http://localhost:3000 --exit`）ではこの要素が監査範囲に含まれていなかった。
+The caption bar is hidden on the intro screen via the `hidden` attribute.
+It only enters the DOM once the user clicks "Start the experience" and
+navigates to the simulator screen, at which point JS removes `hidden`.
+Because axe excludes hidden elements from evaluation, a CLI audit that
+only looks at a single URL's initial load
+(`npx axe http://localhost:3000 --exit`) never brought this element into
+scope.
 
-## 修正内容（コミット `2d62bd6`）
+## The fix (commit `2d62bd6`)
 
 ```diff
 -<div class="captionbar" id="captionbar" hidden>
 +<div class="captionbar" id="captionbar" role="region" aria-label="読み上げ字幕" data-i18n-arialabel="captionLabel" hidden>
 ```
 
-加えて、言語切替時にも `aria-label` が追随するよう、`data-i18n-arialabel` 属性を汎用的に処理する数行を `renderLang()` に追加した。
+In addition, a few lines were added to `renderLang()` to generically
+process the `data-i18n-arialabel` attribute, so `aria-label` also follows
+along on language switch.
 
-修正後、同じ5状態を再監査し、**全状態で violations: 0** を確認した。
+After the fix, the same 5 states were re-audited and **0 violations in
+every state** was confirmed.
 
-## この事例からの示唆
+## What this case suggests
 
-1. **単発のCLI監査はSPA的なUIの偽陰性を生む。** 状態遷移で初めてDOMに現れる要素は、初期表示だけを見る監査では見逃される。今回はイントロ画面が0件だったために、もし多状態検証をしていなければ「axe違反0」を誤って報告していた可能性がある。
-2. **この違反は、デモが意図的に再現している「BEFOREモードの5つの不備」（フォーカス順序、aria-label欠落、シークバー到達不能、状態非伝達、機械的alt）とは別物である。** それらのモック要素には `aria-hidden="true"` が付与されており、そもそも支援技術にもaxeにも露出しない疑似コンテンツである。今回axeが検出したのは、シミュレータの「土台」側（実DOMのライブリージョン運用部分）に実際に存在した、意図しない欠陥だった。
-3. **CLAUDE.mdが要求する「axe違反0」は、AIによる初回生成（v1）の時点では満たされていなかった。** 複数状態を明示的に操作して検証して初めて欠陥が可視化され、1回の追加修正コミットで解消された。
+1. **A single CLI audit produces false negatives on SPA-style UI.**
+   Elements that only enter the DOM on a state transition are missed by an
+   audit that only looks at the initial load. In this case the intro
+   screen alone reported 0, so without explicit multi-state verification
+   an "axe violations: 0" claim could have been reported incorrectly.
+2. **This violation is unrelated to the "five BEFORE-mode defects" the
+   demo intentionally reproduces** (focus order, missing aria-label,
+   unreachable seek bar, unconveyed state, mechanical alt text). Those
+   mock elements carry `aria-hidden="true"` and are never exposed to
+   assistive technology or to axe in the first place — they are simulated
+   content. What axe caught here was an actual, unintended defect in the
+   simulator's own "chassis" (the real-DOM live-region plumbing).
+3. **The "axe violations: 0" that CLAUDE.md requires was not met at the
+   point of the AI's initial generation (v1).** The defect only became
+   visible once multiple states were explicitly exercised, and it was
+   resolved in one additional fix commit.
 
-## 参考: 生データ（axe-core出力抜粋）
+## Reference: raw data (excerpt of axe-core output)
 
 <details>
-<summary>state 2 (BEFORE, blurred, ja) の violations 全文</summary>
+<summary>Full violations payload for state 2 (BEFORE, blurred, ja)</summary>
 
 ```json
 {
