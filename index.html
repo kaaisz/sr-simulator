@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -335,8 +335,8 @@ td.win { color: var(--ok); font-weight: 700; }
       <span data-i18n="siteTitle">スクリーンリーダー体験シミュレータ</span>
     </h1>
     <div class="lang-switch" role="group" aria-label="Language / 言語">
-      <button type="button" id="lang-ja" aria-pressed="true" lang="ja">日本語</button>
-      <button type="button" id="lang-en" aria-pressed="false" lang="en">English</button>
+      <button type="button" id="lang-en" aria-pressed="true" lang="en">English</button>
+      <button type="button" id="lang-ja" aria-pressed="false" lang="ja">日本語</button>
     </div>
   </div>
 </header>
@@ -811,7 +811,7 @@ var SEQ = {
  * state
  * ============================================================= */
 var state = {
-  lang: 'ja',
+  lang: 'en',
   mode: 'before',
   idx: 0,
   subOn: false,
@@ -820,7 +820,11 @@ var state = {
     before: { ops: 0, startTs: null, ms: null, done: false },
     after:  { ops: 0, startTs: null, ms: null, done: false }
   },
-  simActive: false
+  simActive: false,
+  /* the 3 caption-bar slots (oldest, middle, newest == hist1, hist2, cur),
+     kept in parallel with their DOM text so a language switch can
+     regenerate each slot instead of leaving it stuck in the old language */
+  captionLog: [null, null, null]
 };
 
 function t(key) { return I18N[state.lang][key]; }
@@ -847,19 +851,41 @@ function renderLang() {
   stage.setAttribute('aria-label', t('stageAriaLabel'));
   $('lang-ja').setAttribute('aria-pressed', String(state.lang === 'ja'));
   $('lang-en').setAttribute('aria-pressed', String(state.lang === 'en'));
+  /* the caption bar's 3 text nodes are populated at runtime, not tagged
+     data-i18n, so they need to be regenerated from their descriptors
+     rather than left showing whatever language they were last spoken in */
+  var slots = [$('cap-hist1'), $('cap-hist2'), $('cap-cur')];
+  for (var s = 0; s < 3; s++) {
+    var regenerated = regenerateCaption(state.captionLog[s]);
+    if (regenerated !== null) slots[s].textContent = regenerated;
+  }
   if (state.simActive && currentRun().done) refreshCompletePanelText();
 }
 
 /* =============================================================
  * caption bar + optional speech (Web Speech API)
  * ============================================================= */
-function announce(text) {
+function regenerateCaption(desc) {
+  if (!desc) return null;
+  if (desc.kind === 'literal') return t(desc.key);
+  if (desc.kind === 'success') return t('simSuccess');
+  var item = SEQ[desc.mode][desc.idx];
+  if (desc.kind === 'item') return itemText(item, desc.subOn);
+  if (desc.kind === 'edge') return (desc.dir === 'top' ? t('simEdgeTop') : t('simEdge')) + ' ' + itemText(item);
+  if (desc.kind === 'noaction') return t('simNoAction') + ' ' + itemText(item);
+  return null;
+}
+
+function announce(text, descriptor) {
   var h1 = $('cap-hist1'), h2 = $('cap-hist2'), cur = $('cap-cur');
   if (cur.textContent) {
     h1.textContent = h2.textContent || ' ';
     h2.textContent = cur.textContent;
+    state.captionLog[0] = state.captionLog[1];
+    state.captionLog[1] = state.captionLog[2];
   }
   cur.textContent = text;
+  state.captionLog[2] = descriptor || null;
   if (state.speechOn && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
@@ -890,9 +916,10 @@ function moveRing(elId) {
 /* =============================================================
  * simulator state machine
  * ============================================================= */
-function itemText(item) {
+function itemText(item, subOnOverride) {
   if (item.act === 'subtitle-fixed') {
-    var s = state.subOn ? t('subOn') : t('subOff');
+    var on = subOnOverride === undefined ? state.subOn : subOnOverride;
+    var s = on ? t('subOn') : t('subOff');
     return state.lang === 'ja'
       ? ('字幕、切り替えボタン、' + s)
       : ('Subtitles, toggle button, ' + s);
@@ -910,10 +937,14 @@ function countOp() {
   if (run.startTs === null) run.startTs = Date.now();
 }
 
+function itemDescriptor(item, kind) {
+  return { kind: kind, mode: state.mode, idx: state.idx, subOn: item.act === 'subtitle-fixed' ? state.subOn : undefined };
+}
+
 function announceCurrent() {
   var item = currentSeq()[state.idx];
   moveRing(item.el);
-  announce(itemText(item));
+  announce(itemText(item), itemDescriptor(item, 'item'));
 }
 
 function simMove(delta) {
@@ -922,13 +953,14 @@ function simMove(delta) {
   var seq = currentSeq();
   var next = state.idx + delta;
   if (next < 0) {
-    announce(t('simEdgeTop') + ' ' + itemText(seq[0]));
+    announce(t('simEdgeTop') + ' ' + itemText(seq[0]), { kind: 'edge', dir: 'top', mode: state.mode, idx: 0 });
     state.idx = 0; moveRing(seq[0].el);
     return;
   }
   if (next >= seq.length) {
-    announce(t('simEdge') + ' ' + itemText(seq[seq.length - 1]));
-    state.idx = seq.length - 1; moveRing(seq[state.idx].el);
+    state.idx = seq.length - 1;
+    announce(t('simEdge') + ' ' + itemText(seq[state.idx]), { kind: 'edge', dir: 'end', mode: state.mode, idx: state.idx });
+    moveRing(seq[state.idx].el);
     return;
   }
   state.idx = next;
@@ -944,7 +976,7 @@ function simActivate() {
     run.done = true;
     run.ms = run.startTs === null ? 0 : (Date.now() - run.startTs);
     setPlayingVisual(true);
-    announce(t('simSuccess'));
+    announce(t('simSuccess'), { kind: 'success' });
     showCompletePanel();
     return;
   }
@@ -952,16 +984,16 @@ function simActivate() {
     state.subOn = !state.subOn;
     setSubtitleVisual();
     /* the broken toggle re-announces the same string: state is not conveyed */
-    announce(itemText(item));
+    announce(itemText(item), itemDescriptor(item, 'item'));
     return;
   }
   if (item.act === 'subtitle-fixed') {
     state.subOn = !state.subOn;
     setSubtitleVisual();
-    announce(itemText(item));
+    announce(itemText(item), itemDescriptor(item, 'item'));
     return;
   }
-  announce(t('simNoAction') + ' ' + itemText(item));
+  announce(t('simNoAction') + ' ' + itemText(item), { kind: 'noaction', mode: state.mode, idx: state.idx });
 }
 
 function setSubtitleVisual() {
@@ -984,7 +1016,8 @@ function startMode(mode, focusStage) {
   $('seg-before').setAttribute('aria-pressed', String(mode === 'before'));
   $('seg-after').setAttribute('aria-pressed', String(mode === 'after'));
   $('complete-panel').hidden = true;
-  announce(mode === 'before' ? t('simStartBefore') : t('simStartAfter'));
+  announce(mode === 'before' ? t('simStartBefore') : t('simStartAfter'),
+    { kind: 'literal', key: mode === 'before' ? 'simStartBefore' : 'simStartAfter' });
   /* the first item is announced right away, so reaching Play costs exactly
      17 arrows + Enter = 18 ops (BEFORE) / 2 arrows + Enter = 3 ops (AFTER) */
   window.setTimeout(function () { announceCurrent(); }, 700);
