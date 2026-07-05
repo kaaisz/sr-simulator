@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="動画配信サービスUIのアクセシビリティ改善Before/Afterを、疑似スクリーンリーダーで体験するデモ">
+<title>スクリーンリーダー体験シミュレータ | Quorzana a11y ケーススタディ</title>
+<style>
+/* ================= design tokens ================= */
+:root {
+  color-scheme: light dark;
+  /* shell: editorial warm neutral + 1 accent (all pairs verified >= 4.5:1, UI >= 3:1) */
+  --bg: #F4F0E9;
+  --surface: #FDFCF9;
+  --text: #26221B;
+  --muted: #5E5749;
+  --border: #DED7CA;
+  --border-strong: #8A8171;
+  --accent: #5B2E91;
+  --on-accent: #FFFFFF;
+  --ok: #1E6B4D;
+  --bad: #9A2A2A;
+  /* Quorzana 夜紫 palette (docs/app_spec.md Step 2) — the mock player keeps its
+     own brand-dark look in both shell themes */
+  --qz-bg: #1B1023;
+  --qz-surface: #241531;
+  --qz-surface-2: #2C1A3D;
+  --qz-text: #F2ECFA;
+  --qz-muted: #C9B8DE;
+  --qz-divider: #3C2A4E;
+  --qz-accent: #E0A63A;
+  --qz-on-accent: #1B1023;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #191713;
+    --surface: #221F19;
+    --text: #ECE7DD;
+    --muted: #B4AB99;
+    --border: #3A362D;
+    --border-strong: #8A8171;
+    --accent: #C9B2ED;
+    --on-accent: #191713;
+    --ok: #7EDDB4;
+    --bad: #F0A0A0;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", "Segoe UI", Roboto, "Noto Sans JP",
+    Meiryo, sans-serif;
+  line-height: 1.7;
+  padding-bottom: 132px; /* room for the fixed caption bar */
+}
+.wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; padding: 0;
+}
+.skip-link {
+  position: absolute; left: 8px; top: -64px;
+  background: var(--accent); color: var(--on-accent);
+  padding: 10px 16px; border-radius: 6px; z-index: 60;
+  font-weight: 700; text-decoration: none;
+}
+.skip-link:focus { top: 8px; }
+
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ================= shell layout ================= */
+.site-header {
+  border-bottom: 1px solid var(--border);
+  padding: 20px 0;
+}
+.site-header .wrap { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.site-title { margin: 0; font-size: 20px; letter-spacing: 0.01em; }
+.site-title .kicker {
+  display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 2px;
+}
+
+.lang-switch { display: flex; gap: 0; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; flex: none; }
+.lang-switch button {
+  font: inherit; font-size: 13px; font-weight: 700;
+  min-width: 48px; min-height: 36px; padding: 4px 12px;
+  border: none; cursor: pointer; background: var(--surface); color: var(--muted);
+}
+.lang-switch button + button { border-left: 1px solid var(--border-strong); }
+.lang-switch button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+
+main { display: block; }
+section[hidden] { display: none; }
+.screen { padding: 40px 0; }
+h2 { font-size: 24px; margin: 0 0 12px; letter-spacing: -0.005em; }
+h3 { font-size: 17px; margin: 28px 0 8px; }
+p { margin: 0 0 12px; max-width: 66ch; }
+.muted { color: var(--muted); }
+
+.note {
+  border: 1px solid var(--border); border-left: 4px solid var(--accent);
+  background: var(--surface); border-radius: 8px;
+  padding: 14px 18px; margin: 0 0 24px;
+}
+.note p { margin: 0 0 6px; }
+.note p:last-child { margin-bottom: 0; }
+
+.mission {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 20px 24px; margin: 24px 0;
+}
+.mission .label {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 6px;
+}
+.mission .body { font-size: 19px; font-weight: 700; margin: 0 0 8px; text-wrap: balance; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font: inherit; font-size: 15px; font-weight: 700;
+  min-height: 44px; padding: 10px 22px;
+  border-radius: 8px; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text); cursor: pointer;
+  text-decoration: none;
+}
+.btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.btn-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+
+/* toolbar */
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center;
+  padding: 14px 0; margin-bottom: 16px; border-bottom: 1px solid var(--border);
+}
+.toolbar .group { display: flex; align-items: center; gap: 10px; }
+.toolbar .group-label { font-size: 13px; color: var(--muted); font-weight: 600; }
+.segmented { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
+.segmented button {
+  font: inherit; font-size: 13px; font-weight: 700; min-height: 40px; padding: 6px 16px;
+  border: none; cursor: pointer; background: var(--surface); color: var(--muted);
+}
+.segmented button + button { border-left: 1px solid var(--border-strong); }
+.segmented button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+.toggle {
+  font: inherit; font-size: 13px; font-weight: 600; min-height: 40px; padding: 6px 14px;
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--surface); color: var(--text); cursor: pointer;
+}
+.toggle[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* ================= stage / mock player ================= */
+.stage {
+  position: relative; border-radius: 14px; overflow: hidden;
+  border: 2px solid var(--border-strong);
+}
+.stage:focus-visible { outline: 4px solid var(--accent); outline-offset: 3px; }
+.stage-blur-note {
+  position: absolute; top: 10px; left: 10px; z-index: 5;
+  background: rgba(20, 14, 28, 0.82); color: #FFFFFF;
+  font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 999px;
+  pointer-events: none; margin: 0;
+}
+.stage.revealed .stage-blur-note { display: none; }
+.mock { filter: blur(18px); }
+.stage.revealed .mock { filter: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .mock { transition: filter 0.3s ease; }
+}
+
+/* pseudo-focus ring drawn above the blur */
+.sim-ring {
+  position: absolute; z-index: 4; pointer-events: none;
+  border: 3px solid var(--qz-accent); border-radius: 8px;
+  box-shadow: 0 0 0 2px rgba(27, 16, 35, 0.85);
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sim-ring { transition: top 0.12s ease, left 0.12s ease, width 0.12s ease, height 0.12s ease; }
+}
+
+/* Quorzana mock player (brand-dark 夜紫, presentation only) */
+.mock { background: var(--qz-bg); color: var(--qz-text); }
+.qz-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 18px; background: var(--qz-surface); border-bottom: 1px solid var(--qz-divider);
+}
+.qz-brand { display: flex; align-items: center; gap: 9px; }
+.hexmark { position: relative; width: 28px; height: 24px; display: inline-block; }
+.hexmark .hex {
+  position: absolute; width: 18px; height: 18px; top: 3px;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+.hexmark .hex.a { left: 0; background: var(--qz-accent); }
+.hexmark .hex.b { left: 8px; background: var(--qz-text); opacity: 0.55; }
+.qz-wordmark { font-weight: 800; font-size: 15px; letter-spacing: 0.08em; }
+.qz-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 8px; color: var(--qz-text);
+}
+.qz-iconbtn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.qz-headactions { display: flex; gap: 4px; }
+
+.qz-video {
+  position: relative; aspect-ratio: 16 / 6.6;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255,255,255,0.10), transparent 42%),
+    repeating-linear-gradient(115deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 32px),
+    linear-gradient(135deg, var(--qz-accent) -25%, var(--qz-surface-2) 45%, var(--qz-bg) 100%);
+}
+.qz-caption { position: absolute; left: 18px; bottom: 14px; color: #FFFFFF; text-shadow: 0 1px 8px rgba(0,0,0,0.55); }
+.qz-caption .now { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85; }
+.qz-caption .title { font-size: 18px; font-weight: 700; margin-top: 2px; }
+.qz-playbig {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 52px; height: 52px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.75); background: rgba(20,14,28,0.4);
+  display: flex; align-items: center; justify-content: center; color: #FFFFFF;
+}
+.qz-playbig svg { width: 20px; height: 20px; fill: currentColor; }
+
+.qz-controls { padding: 10px 18px 14px; background: var(--qz-surface); border-bottom: 1px solid var(--qz-divider); }
+.qz-seekrow { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.qz-time { font-size: 11px; color: var(--qz-muted); font-variant-numeric: tabular-nums; }
+.qz-track { flex: 1; height: 6px; border-radius: 999px; background: var(--qz-surface-2); position: relative; }
+.qz-track .fill { position: absolute; inset: 0 auto 0 0; width: 35%; border-radius: 999px; background: var(--qz-accent); }
+.qz-track .knob {
+  position: absolute; top: 50%; left: 35%; transform: translate(-50%, -50%);
+  width: 14px; height: 14px; border-radius: 50%; background: var(--qz-accent);
+}
+.qz-ctrlrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qz-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; padding: 6px 11px;
+  border: 1px solid var(--qz-divider); border-radius: 8px; color: var(--qz-text);
+}
+.qz-chip svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.qz-chip.is-on { border-color: var(--qz-accent); color: var(--qz-accent); background: rgba(224, 166, 58, 0.14); }
+.qz-chip.push-right { margin-left: auto; }
+.qz-vol { display: inline-flex; align-items: center; gap: 6px; color: var(--qz-muted); }
+.qz-vol .bar { width: 60px; height: 5px; border-radius: 999px; background: var(--qz-surface-2); position: relative; }
+.qz-vol .bar .fill { position: absolute; inset: 0 auto 0 0; width: 70%; border-radius: 999px; background: var(--qz-muted); }
+
+.qz-reco { padding: 14px 18px 6px; }
+.qz-reco .head { font-size: 12px; font-weight: 700; color: var(--qz-muted); margin-bottom: 8px; }
+.qz-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.qz-card { background: var(--qz-surface); border: 1px solid var(--qz-divider); border-radius: 9px; overflow: hidden; }
+.qz-thumb { aspect-ratio: 16 / 9; }
+.qz-thumb.t1 { background: repeating-linear-gradient(120deg, rgba(255,255,255,.08) 0 2px, transparent 2px 18px), linear-gradient(140deg, var(--qz-accent), var(--qz-surface-2)); }
+.qz-thumb.t2 { background: repeating-linear-gradient(60deg, rgba(255,255,255,.08) 0 2px, transparent 2px 18px), linear-gradient(140deg, var(--qz-surface-2), var(--qz-bg)); }
+.qz-thumb.t3 { background: radial-gradient(circle at 30% 40%, rgba(255,255,255,.14) 0 3px, transparent 4px) 0 0 / 22px 22px, linear-gradient(140deg, var(--qz-accent), var(--qz-bg)); }
+.qz-thumb.t4 { background: repeating-linear-gradient(0deg, rgba(255,255,255,.07) 0 3px, transparent 3px 14px), linear-gradient(160deg, var(--qz-surface-2), var(--qz-accent)); }
+.qz-cardbody { padding: 6px 9px 8px; }
+.qz-cardtitle { font-size: 11.5px; font-weight: 700; }
+.qz-cardmeta { font-size: 10.5px; color: var(--qz-muted); }
+
+.qz-ad {
+  margin: 12px 18px 18px; padding: 11px 14px; border-radius: 9px;
+  border: 1px dashed var(--qz-divider); background: var(--qz-surface-2);
+  display: flex; align-items: center; justify-content: space-between;
+  color: var(--qz-muted); font-size: 11.5px;
+}
+.qz-ad .tag { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; border: 1px solid var(--qz-divider); border-radius: 4px; padding: 1px 6px; }
+
+@media (max-width: 640px) {
+  .qz-cards { grid-template-columns: repeat(2, 1fr); }
+  .qz-video { aspect-ratio: 16 / 9; }
+}
+
+/* ================= caption bar ================= */
+.captionbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  background: var(--surface); border-top: 2px solid var(--border-strong);
+  padding: 10px 20px 14px;
+}
+.captionbar .inner { max-width: 860px; margin: 0 auto; }
+.captionbar .bar-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 4px;
+}
+.captionbar .hist { margin: 0; font-size: 13px; color: var(--muted); min-height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.captionbar .cur { margin: 2px 0 0; font-size: 16px; font-weight: 700; min-height: 1.5em; }
+
+/* ================= completion / result ================= */
+.panel {
+  margin-top: 24px; background: var(--surface); border: 1px solid var(--border);
+  border-left: 4px solid var(--ok); border-radius: 10px; padding: 20px 24px;
+}
+.panel h3 { margin-top: 0; }
+.stats { display: flex; gap: 28px; flex-wrap: wrap; margin: 10px 0 4px; }
+.stat .num { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.stat .cap { font-size: 12px; color: var(--muted); font-weight: 700; }
+
+.result-table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 20px 0; }
+table { border-collapse: collapse; width: 100%; min-width: 480px; background: var(--surface); }
+caption { text-align: left; padding: 12px 16px 4px; font-weight: 700; font-size: 14px; }
+th, td { text-align: left; padding: 10px 16px; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+thead th { border-top: none; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+td.win { color: var(--ok); font-weight: 700; }
+
+.improve-list { margin: 8px 0 0; padding: 0; list-style: none; }
+.improve-list li {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 10px;
+  padding: 14px 18px; margin-bottom: 10px;
+}
+.improve-list .sc { font-size: 12px; font-weight: 700; }
+.improve-list .desc { margin: 4px 0 0; font-size: 14px; }
+
+.explain ol, .explain ul { max-width: 66ch; padding-left: 1.4em; }
+.explain li { margin-bottom: 8px; }
+
+.site-footer { border-top: 1px solid var(--border); margin-top: 48px; padding: 20px 0; font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#explanation" data-i18n="skipLink">シミュレーションをスキップして解説を読む</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <h1 class="site-title">
+      <span class="kicker">Quorzana — Accessibility Case Study</span>
+      <span data-i18n="siteTitle">スクリーンリーダー体験シミュレータ</span>
+    </h1>
+    <div class="lang-switch" role="group" aria-label="Language / 言語">
+      <button type="button" id="lang-ja" aria-pressed="true" lang="ja">日本語</button>
+      <button type="button" id="lang-en" aria-pressed="false" lang="en">English</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ========== 1. intro ========== -->
+  <section class="screen" id="screen-intro" aria-labelledby="intro-heading">
+    <h2 id="intro-heading" tabindex="-1" data-i18n="introHeading">見ないで、聞いて操作する</h2>
+    <p data-i18n="introLede">架空の動画配信サービス「Quorzana」のプレイヤー画面を題材に、アクセシビリティ改善の Before/After を疑似スクリーンリーダーで体験するデモです。</p>
+
+    <div class="note">
+      <p><strong data-i18n="srNoteTitle">実際のスクリーンリーダーをご利用の方へ：</strong></p>
+      <p data-i18n="srNoteBody">これは晴眼者向けの疑似体験デモです。シミュレーションをスキップして、改善内容のテキスト解説へ直接お進みいただけます。</p>
+      <p><a href="#explanation" data-i18n="srNoteLink">改善内容のテキスト解説を読む</a></p>
+    </div>
+
+    <div class="mission">
+      <p class="label" data-i18n="missionLabel">ミッション</p>
+      <p class="body" data-i18n="missionBody">このプレイヤーで「再生」ボタンを押してください。ただし、画面は見えません。</p>
+      <p class="muted" data-i18n="missionHow">操作：→ 次の要素へ ／ ← 前の要素へ ／ Enter 決定。タッチ端末では左右スワイプ＋ダブルタップ。読み上げ内容は画面下部の字幕バーに表示されます。</p>
+    </div>
+
+    <div class="btn-row">
+      <button type="button" class="btn btn-primary" id="btn-start" data-i18n="startBtn">体験をはじめる（改善前から）</button>
+      <a class="btn" href="#explanation" data-i18n="skipBtn">スキップして解説を読む</a>
+    </div>
+  </section>
+
+  <!-- ========== 2. simulator ========== -->
+  <section class="screen" id="screen-sim" aria-labelledby="sim-heading" hidden>
+    <h2 id="sim-heading" tabindex="-1" data-i18n="simHeading">疑似スクリーンリーダー体験</h2>
+    <p class="muted" id="sim-mission-line"><strong data-i18n="missionLabel2">ミッション：</strong><span data-i18n="missionShort">「再生」ボタンを押す（→ ← で移動、Enter で決定）</span></p>
+
+    <div class="toolbar">
+      <div class="group">
+        <span class="group-label" id="mode-label" data-i18n="modeLabel">モード</span>
+        <div class="segmented" role="group" aria-labelledby="mode-label">
+          <button type="button" id="seg-before" aria-pressed="true" data-i18n="segBefore">BEFORE 改善前</button>
+          <button type="button" id="seg-after" aria-pressed="false" data-i18n="segAfter">AFTER 改善後</button>
+        </div>
+      </div>
+      <div class="group">
+        <button type="button" class="toggle" id="toggle-blur" aria-pressed="false" data-i18n="blurToggle">ブラーを外して見る（種明かし）</button>
+        <button type="button" class="toggle" id="toggle-speech" aria-pressed="false" data-i18n="speechToggle">音声読み上げ</button>
+      </div>
+    </div>
+
+    <div class="stage" id="stage" tabindex="0" role="application"
+         aria-roledescription="疑似スクリーンリーダー"
+         aria-label="疑似スクリーンリーダー体験ステージ"
+         aria-describedby="stage-help">
+      <p class="stage-blur-note" data-i18n="blurNote">画面は見えない想定です</p>
+
+      <!-- Quorzana mock player: presentation only, no focusable elements inside -->
+      <div class="mock" aria-hidden="true" id="mock">
+        <div class="qz-header">
+          <div class="qz-brand" id="m-logo">
+            <span class="hexmark"><span class="hex a" id="m-hexa"></span><span class="hex b" id="m-hexb"></span></span>
+            <span class="qz-wordmark" id="m-wordmark">QUORZANA</span>
+          </div>
+          <div class="qz-headactions">
+            <span class="qz-iconbtn" id="m-search">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.6" y2="16.6"></line></svg>
+            </span>
+            <span class="qz-iconbtn" id="m-account">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7"></path></svg>
+            </span>
+          </div>
+        </div>
+
+        <div class="qz-video" id="m-video">
+          <div class="qz-caption" id="m-heading">
+            <div class="now">Now Playing</div>
+            <div class="title">Chapter 01</div>
+          </div>
+          <span class="qz-playbig" id="m-play">
+            <svg viewBox="0 0 24 24" id="m-playicon"><polygon points="7,4 20,12 7,20"></polygon></svg>
+          </span>
+        </div>
+
+        <div class="qz-controls">
+          <div class="qz-seekrow" id="m-seek">
+            <span class="qz-time">04:12</span>
+            <span class="qz-track"><span class="fill"></span><span class="knob"></span></span>
+            <span class="qz-time">24:00</span>
+          </div>
+          <div class="qz-ctrlrow">
+            <span class="qz-vol" id="m-volume">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="4,9 8,9 12,5 12,19 8,15 4,15"></polygon><path d="M16 8a5 5 0 010 8"></path></svg>
+              <span class="bar"><span class="fill"></span></span>
+            </span>
+            <span class="qz-chip" id="m-subtitle">
+              <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"></rect><line x1="7" y1="14" x2="11" y2="14"></line><line x1="13" y1="14" x2="17" y2="14"></line></svg>
+              <span>CC</span>
+            </span>
+            <span class="qz-chip" id="m-quality">
+              <svg viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-11M12 6V3M20 21v-5M20 12V3"></path></svg>
+              <span>Auto</span>
+            </span>
+            <span class="qz-chip push-right" id="m-next">
+              <span>Chapter 02</span>
+              <svg viewBox="0 0 24 24"><polyline points="9,6 15,12 9,18"></polyline><polyline points="15,6 21,12 15,18"></polyline></svg>
+            </span>
+          </div>
+        </div>
+
+        <div class="qz-reco">
+          <div class="head">Recommended</div>
+          <div class="qz-cards">
+            <div class="qz-card" id="m-card1"><div class="qz-thumb t1" id="m-thumb1"></div><div class="qz-cardbody"><div class="qz-cardtitle" id="m-title1">Untitled Series</div><div class="qz-cardmeta">31 min</div></div></div>
+            <div class="qz-card" id="m-card2"><div class="qz-thumb t2" id="m-thumb2"></div><div class="qz-cardbody"><div class="qz-cardtitle" id="m-title2">Sample Feature</div><div class="qz-cardmeta">48 min</div></div></div>
+            <div class="qz-card" id="m-card3"><div class="qz-thumb t3" id="m-thumb3"></div><div class="qz-cardbody"><div class="qz-cardtitle" id="m-title3">Placeholder Story</div><div class="qz-cardmeta">19 min</div></div></div>
+            <div class="qz-card" id="m-card4"><div class="qz-thumb t4" id="m-thumb4"></div><div class="qz-cardbody"><div class="qz-cardtitle" id="m-title4">Draft Episode</div><div class="qz-cardmeta">22 min</div></div></div>
+          </div>
+        </div>
+
+        <div class="qz-ad" id="m-ad">
+          <span data-i18n="mockAdText">広告枠のサンプル表示です</span>
+          <span class="tag">AD</span>
+        </div>
+      </div>
+
+      <div class="sim-ring" id="sim-ring"></div>
+    </div>
+    <p class="visually-hidden" id="stage-help" data-i18n="stageHelp">右矢印キーで次の要素、左矢印キーで前の要素に移動し、Enterキーで決定します。読み上げ内容は下部の字幕バーと音声（オンの場合）で提示されます。</p>
+
+    <div class="panel" id="complete-panel" hidden>
+      <h3 id="complete-title" tabindex="-1"></h3>
+      <div class="stats">
+        <div class="stat"><div class="num" id="stat-ops">0</div><div class="cap" data-i18n="statOps">操作数</div></div>
+        <div class="stat"><div class="num" id="stat-time">0</div><div class="cap" data-i18n="statTime">所要時間（秒）</div></div>
+      </div>
+      <p class="muted" id="complete-hint"></p>
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" id="btn-next-step"></button>
+        <button type="button" class="btn" id="btn-redo" data-i18n="redoBtn">このモードをやり直す</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 3. result ========== -->
+  <section class="screen" id="screen-result" aria-labelledby="result-heading" hidden>
+    <h2 id="result-heading" tabindex="-1" data-i18n="resultHeading">リザルト：あなたの体験</h2>
+    <p data-i18n="resultLede">同じ「再生ボタンを押す」というゴールに対して、改善前と改善後でこれだけの差がありました。</p>
+
+    <div class="result-table-scroll">
+      <table>
+        <caption data-i18n="resultTableCaption">操作数と所要時間の比較</caption>
+        <thead>
+          <tr>
+            <th scope="col" data-i18n="thMode">モード</th>
+            <th scope="col" data-i18n="thOps">操作数</th>
+            <th scope="col" data-i18n="thTime">所要時間</th>
+            <th scope="col" data-i18n="thMin">最短の目安</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" data-i18n="rowBefore">BEFORE（改善前）</th>
+            <td id="res-before-ops">—</td>
+            <td id="res-before-time">—</td>
+            <td data-i18n="minBefore">18操作</td>
+          </tr>
+          <tr>
+            <th scope="row" data-i18n="rowAfter">AFTER（改善後）</th>
+            <td class="win" id="res-after-ops">—</td>
+            <td class="win" id="res-after-time">—</td>
+            <td data-i18n="minAfter">3操作</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 data-i18n="improveHeading">AFTER で適用した改善（WCAG 2.2 達成基準）</h3>
+    <ul class="improve-list">
+      <li>
+        <span class="sc"><a href="https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html" data-i18n="sc243">2.4.3 フォーカス順序</a></span>
+        <p class="desc" data-i18n="sc243desc">広告・装飾・サムネイルを先に巡回する順序をやめ、再生ボタンへ3ステップ以内で到達できる論理順序にした。</p>
+      </li>
+      <li>
+        <span class="sc"><a href="https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html" data-i18n="sc412a">4.1.2 名前・役割・値（名前）</a></span>
+        <p class="desc" data-i18n="sc412adesc">「ボタン」としか読まれなかった再生ボタンに「再生」というアクセシブルネームを付与した。</p>
+      </li>
+      <li>
+        <span class="sc"><a href="https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html" data-i18n="sc211">2.1.1 キーボード</a></span>
+        <p class="desc" data-i18n="sc211desc">到達不能だったシークバーをキーボード操作可能にし、全コントロールへ到達できるようにした。</p>
+      </li>
+      <li>
+        <span class="sc"><a href="https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html" data-i18n="sc412b">4.1.2 名前・役割・値（状態）</a></span>
+        <p class="desc" data-i18n="sc412bdesc">字幕切替の ON/OFF が読まれなかった問題を aria-pressed 相当の状態通知で解消した。</p>
+      </li>
+      <li>
+        <span class="sc"><a href="https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html" data-i18n="sc111">1.1.1 非テキストコンテンツ</a></span>
+        <p class="desc" data-i18n="sc111desc">img_0342.jpg のようなファイル名読み上げをやめ、内容を説明する代替テキストにした。</p>
+      </li>
+    </ul>
+
+    <div class="btn-row">
+      <button type="button" class="btn btn-primary" id="btn-retry" data-i18n="retryBtn">もう一度</button>
+      <a class="btn" href="#explanation" data-i18n="moreBtn">もっと詳しく（解説へ）</a>
+    </div>
+  </section>
+
+  <!-- ========== 4. text explanation (always available; SR-user path) ========== -->
+  <section class="screen explain" id="explanation" aria-labelledby="explain-heading">
+    <h2 id="explain-heading" tabindex="-1" data-i18n="explainHeading">テキスト解説：何が壊れていて、どう直したか</h2>
+    <p data-i18n="explainLede">このデモの BEFORE モードは、実務のアクセシビリティ改善でよく遭遇する不備パターンを一般化して再現したものです（特定のプロダクトや会社を示すものではありません）。</p>
+
+    <h3 data-i18n="explainBeforeHeading">BEFORE：改善前の5つの不備</h3>
+    <ol>
+      <li data-i18n="issue1">フォーカス順序が視覚的なレイアウトと無関係で、広告バナー→装飾アイコン→サムネイル群を先に巡回し、目的の再生ボタンは18番目にしか現れない。</li>
+      <li data-i18n="issue2">再生ボタンにアクセシブルネームがなく、「ボタン」としか読み上げられないため、どれが再生なのか判別できない。</li>
+      <li data-i18n="issue3">シークバーがキーボードで到達不能（tabindex=-1 相当）。</li>
+      <li data-i18n="issue4">字幕切替ボタンの ON/OFF 状態が読み上げられない（aria-pressed 欠落）。</li>
+      <li data-i18n="issue5">カルーセル画像の代替テキストが img_0342.jpg のような機械的なファイル名のまま。</li>
+    </ol>
+
+    <h3 data-i18n="explainAfterHeading">AFTER：WCAG 2.2 に基づく改善</h3>
+    <ol>
+      <li data-i18n="fix1">論理的なフォーカス順序に修正し、再生ボタンへ3ステップ以内で到達できるようにした。［2.4.3 フォーカス順序］</li>
+      <li data-i18n="fix2">全コントロールに名前・役割・値を完備した（再生ボタンは「再生、ボタン、動画を再生します」と読まれる）。［4.1.2 名前・役割・値］</li>
+      <li data-i18n="fix3">シークバーを含む全コントロールにキーボードで到達・操作できるようにした。［2.1.1 キーボード］</li>
+      <li data-i18n="fix4">字幕切替に aria-pressed、スライダーに aria-valuenow 相当の状態通知を追加した。［4.1.2］</li>
+      <li data-i18n="fix5">画像に内容を説明する代替テキストを付与した。［1.1.1 非テキストコンテンツ］</li>
+    </ol>
+
+    <h3 data-i18n="explainResultHeading">効果</h3>
+    <p data-i18n="explainResult">「再生ボタンを押す」というゴールに必要な操作数は、最短で 18操作 → 3操作 に短縮されます。操作数以上に重要なのは、改善前は「どれが再生ボタンか音声だけでは特定できない」＝実質達成不能だった点です。</p>
+  </section>
+
+</main>
+
+<!-- caption bar: real DOM live region (aria-live=polite), mirrors the simulated speech -->
+<div class="captionbar" id="captionbar" hidden>
+  <div class="inner">
+    <p class="bar-label" data-i18n="captionLabel">読み上げ字幕</p>
+    <p class="hist" id="cap-hist1" aria-hidden="true">&nbsp;</p>
+    <p class="hist" id="cap-hist2" aria-hidden="true">&nbsp;</p>
+    <p class="cur" id="cap-cur" aria-live="polite"></p>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p data-i18n="footerNote">Quorzana は本デモのために作られた架空の動画配信サービスです。実在のサービス・作品・広告主とは一切関係ありません。</p>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+/* =============================================================
+ * i18n dictionary — every UI string lives here
+ * ============================================================= */
+var I18N = {
+  ja: {
+    docTitle: 'スクリーンリーダー体験シミュレータ | Quorzana a11y ケーススタディ',
+    siteTitle: 'スクリーンリーダー体験シミュレータ',
+    skipLink: 'シミュレーションをスキップして解説を読む',
+    introHeading: '見ないで、聞いて操作する',
+    introLede: '架空の動画配信サービス「Quorzana」のプレイヤー画面を題材に、アクセシビリティ改善の Before/After を疑似スクリーンリーダーで体験するデモです。',
+    srNoteTitle: '実際のスクリーンリーダーをご利用の方へ：',
+    srNoteBody: 'これは晴眼者向けの疑似体験デモです。シミュレーションをスキップして、改善内容のテキスト解説へ直接お進みいただけます。',
+    srNoteLink: '改善内容のテキスト解説を読む',
+    missionLabel: 'ミッション',
+    missionLabel2: 'ミッション：',
+    missionBody: 'このプレイヤーで「再生」ボタンを押してください。ただし、画面は見えません。',
+    missionShort: '「再生」ボタンを押す（→ ← で移動、Enter で決定）',
+    missionHow: '操作：→ 次の要素へ ／ ← 前の要素へ ／ Enter 決定。タッチ端末では左右スワイプ＋ダブルタップ。読み上げ内容は画面下部の字幕バーに表示されます。',
+    startBtn: '体験をはじめる（改善前から）',
+    skipBtn: 'スキップして解説を読む',
+    simHeading: '疑似スクリーンリーダー体験',
+    modeLabel: 'モード',
+    segBefore: 'BEFORE 改善前',
+    segAfter: 'AFTER 改善後',
+    blurToggle: 'ブラーを外して見る（種明かし）',
+    speechToggle: '音声読み上げ',
+    blurNote: '画面は見えない想定です',
+    stageRoleDesc: '疑似スクリーンリーダー',
+    stageAriaLabel: '疑似スクリーンリーダー体験ステージ',
+    stageHelp: '右矢印キーで次の要素、左矢印キーで前の要素に移動し、Enterキーで決定します。読み上げ内容は下部の字幕バーと音声（オンの場合）で提示されます。',
+    captionLabel: '読み上げ字幕',
+    mockAdText: '広告枠のサンプル表示です',
+    statOps: '操作数',
+    statTime: '所要時間（秒）',
+    redoBtn: 'このモードをやり直す',
+    doneBefore: '改善前の体験が完了しました',
+    doneAfter: '改善後の体験が完了しました',
+    hintAfterBefore: '同じミッションを、改善後のプレイヤーでもう一度体験してみてください。',
+    hintAfterAfter: '両方の体験が終わりました。結果を比較してみましょう。',
+    hintNeedBefore: '次は改善前（BEFORE）も体験して、結果を比較してみましょう。',
+    toAfterBtn: '改善後（AFTER）を体験する',
+    toBeforeBtn: '改善前（BEFORE）を体験する',
+    toResultBtn: '結果を見る',
+    resultHeading: 'リザルト：あなたの体験',
+    resultLede: '同じ「再生ボタンを押す」というゴールに対して、改善前と改善後でこれだけの差がありました。',
+    resultTableCaption: '操作数と所要時間の比較',
+    thMode: 'モード', thOps: '操作数', thTime: '所要時間', thMin: '最短の目安',
+    rowBefore: 'BEFORE（改善前）', rowAfter: 'AFTER（改善後）',
+    minBefore: '18操作', minAfter: '3操作',
+    opsUnit: '操作', secUnit: '秒',
+    improveHeading: 'AFTER で適用した改善（WCAG 2.2 達成基準）',
+    sc243: '2.4.3 フォーカス順序',
+    sc243desc: '広告・装飾・サムネイルを先に巡回する順序をやめ、再生ボタンへ3ステップ以内で到達できる論理順序にした。',
+    sc412a: '4.1.2 名前・役割・値（名前）',
+    sc412adesc: '「ボタン」としか読まれなかった再生ボタンに「再生」というアクセシブルネームを付与した。',
+    sc211: '2.1.1 キーボード',
+    sc211desc: '到達不能だったシークバーをキーボード操作可能にし、全コントロールへ到達できるようにした。',
+    sc412b: '4.1.2 名前・役割・値（状態）',
+    sc412bdesc: '字幕切替の ON/OFF が読まれなかった問題を aria-pressed 相当の状態通知で解消した。',
+    sc111: '1.1.1 非テキストコンテンツ',
+    sc111desc: 'img_0342.jpg のようなファイル名読み上げをやめ、内容を説明する代替テキストにした。',
+    retryBtn: 'もう一度',
+    moreBtn: 'もっと詳しく（解説へ）',
+    explainHeading: 'テキスト解説：何が壊れていて、どう直したか',
+    explainLede: 'このデモの BEFORE モードは、実務のアクセシビリティ改善でよく遭遇する不備パターンを一般化して再現したものです（特定のプロダクトや会社を示すものではありません）。',
+    explainBeforeHeading: 'BEFORE：改善前の5つの不備',
+    issue1: 'フォーカス順序が視覚的なレイアウトと無関係で、広告バナー→装飾アイコン→サムネイル群を先に巡回し、目的の再生ボタンは18番目にしか現れない。',
+    issue2: '再生ボタンにアクセシブルネームがなく、「ボタン」としか読み上げられないため、どれが再生なのか判別できない。',
+    issue3: 'シークバーがキーボードで到達不能（tabindex=-1 相当）。',
+    issue4: '字幕切替ボタンの ON/OFF 状態が読み上げられない（aria-pressed 欠落）。',
+    issue5: 'カルーセル画像の代替テキストが img_0342.jpg のような機械的なファイル名のまま。',
+    explainAfterHeading: 'AFTER：WCAG 2.2 に基づく改善',
+    fix1: '論理的なフォーカス順序に修正し、再生ボタンへ3ステップ以内で到達できるようにした。［2.4.3 フォーカス順序］',
+    fix2: '全コントロールに名前・役割・値を完備した（再生ボタンは「再生、ボタン、動画を再生します」と読まれる）。［4.1.2 名前・役割・値］',
+    fix3: 'シークバーを含む全コントロールにキーボードで到達・操作できるようにした。［2.1.1 キーボード］',
+    fix4: '字幕切替に aria-pressed、スライダーに aria-valuenow 相当の状態通知を追加した。［4.1.2］',
+    fix5: '画像に内容を説明する代替テキストを付与した。［1.1.1 非テキストコンテンツ］',
+    explainResultHeading: '効果',
+    explainResult: '「再生ボタンを押す」というゴールに必要な操作数は、最短で 18操作 → 3操作 に短縮されます。操作数以上に重要なのは、改善前は「どれが再生ボタンか音声だけでは特定できない」＝実質達成不能だった点です。',
+    footerNote: 'Quorzana は本デモのために作られた架空の動画配信サービスです。実在のサービス・作品・広告主とは一切関係ありません。',
+    simStartBefore: '改善前のプレイヤーです。ミッション：再生ボタンを押してください。',
+    simStartAfter: '改善後のプレイヤーです。ミッション：再生ボタンを押してください。',
+    simEdge: '（末尾です）',
+    simEdgeTop: '（先頭です）',
+    simNoAction: '（何も起こりませんでした）',
+    simSuccess: '動画を再生しました。ミッション達成！',
+    subOn: 'オン', subOff: 'オフ'
+  },
+  en: {
+    docTitle: 'Screen Reader Experience Simulator | Quorzana a11y Case Study',
+    siteTitle: 'Screen Reader Experience Simulator',
+    skipLink: 'Skip the simulation and read the explanation',
+    introHeading: 'Operate by ear, not by eye',
+    introLede: 'An interactive demo that lets you experience the before/after of an accessibility remediation, using the player screen of “Quorzana,” a fictional video streaming service.',
+    srNoteTitle: 'If you use an actual screen reader:',
+    srNoteBody: 'This is a simulated experience designed for sighted visitors. You can skip the simulation and go straight to the text explanation of the improvements.',
+    srNoteLink: 'Read the text explanation of the improvements',
+    missionLabel: 'Mission',
+    missionLabel2: 'Mission: ',
+    missionBody: 'Press the “Play” button in this player. The catch: you cannot see the screen.',
+    missionShort: 'Press the “Play” button (→ ← to move, Enter to activate)',
+    missionHow: 'Controls: → next element / ← previous element / Enter to activate. On touch devices, swipe left/right and double-tap. The simulated speech appears in the caption bar at the bottom.',
+    startBtn: 'Start the experience (BEFORE first)',
+    skipBtn: 'Skip to the explanation',
+    simHeading: 'Simulated screen reader experience',
+    modeLabel: 'Mode',
+    segBefore: 'BEFORE',
+    segAfter: 'AFTER',
+    blurToggle: 'Remove the blur (reveal)',
+    speechToggle: 'Speech output',
+    blurNote: 'Pretend you cannot see this',
+    stageRoleDesc: 'simulated screen reader',
+    stageAriaLabel: 'Simulated screen reader stage',
+    stageHelp: 'Use the right arrow key to move to the next element, the left arrow key for the previous one, and Enter to activate. The simulated speech is shown in the caption bar below and spoken aloud if speech is on.',
+    captionLabel: 'Speech captions',
+    mockAdText: 'Sample ad placeholder',
+    statOps: 'Operations',
+    statTime: 'Time (seconds)',
+    redoBtn: 'Redo this mode',
+    doneBefore: 'You finished the BEFORE experience',
+    doneAfter: 'You finished the AFTER experience',
+    hintAfterBefore: 'Now try the same mission with the improved player.',
+    hintAfterAfter: 'You have tried both. Let’s compare the results.',
+    hintNeedBefore: 'Next, try the BEFORE player to compare the results.',
+    toAfterBtn: 'Try the AFTER player',
+    toBeforeBtn: 'Try the BEFORE player',
+    toResultBtn: 'See the results',
+    resultHeading: 'Results: your experience',
+    resultLede: 'For the same goal — pressing the Play button — here is the difference between before and after.',
+    resultTableCaption: 'Comparison of operations and time',
+    thMode: 'Mode', thOps: 'Operations', thTime: 'Time', thMin: 'Minimum',
+    rowBefore: 'BEFORE', rowAfter: 'AFTER',
+    minBefore: '18 ops', minAfter: '3 ops',
+    opsUnit: ' ops', secUnit: ' s',
+    improveHeading: 'Improvements applied in AFTER (WCAG 2.2 success criteria)',
+    sc243: '2.4.3 Focus Order',
+    sc243desc: 'Stopped cycling through ads, decoration and thumbnails first; the Play button is now reachable within 3 steps in a logical order.',
+    sc412a: '4.1.2 Name, Role, Value (name)',
+    sc412adesc: 'The Play button, previously announced only as “button,” now has the accessible name “Play.”',
+    sc211: '2.1.1 Keyboard',
+    sc211desc: 'The previously unreachable seek bar is now keyboard-operable; every control can be reached.',
+    sc412b: '4.1.2 Name, Role, Value (state)',
+    sc412bdesc: 'The subtitles toggle now announces its on/off state via aria-pressed.',
+    sc111: '1.1.1 Non-text Content',
+    sc111desc: 'Replaced file-name alt text like img_0342.jpg with descriptions of the image content.',
+    retryBtn: 'Try again',
+    moreBtn: 'Learn more (explanation)',
+    explainHeading: 'Text explanation: what was broken, and how it was fixed',
+    explainLede: 'The BEFORE mode reproduces generalized anti-patterns commonly encountered in real-world accessibility remediation work (it does not depict any specific product or company).',
+    explainBeforeHeading: 'BEFORE: the five defects',
+    issue1: 'The focus order ignores the visual layout: it visits the ad banner, decorative icons and thumbnails first, and the Play button only appears 18th.',
+    issue2: 'The Play button has no accessible name and is announced only as “button,” so it cannot be identified by sound.',
+    issue3: 'The seek bar is unreachable by keyboard (equivalent to tabindex=-1).',
+    issue4: 'The subtitles toggle never announces its on/off state (missing aria-pressed).',
+    issue5: 'Carousel images keep mechanical file names like img_0342.jpg as their alt text.',
+    explainAfterHeading: 'AFTER: improvements based on WCAG 2.2',
+    fix1: 'Fixed the focus order so the Play button is reachable within 3 steps. [2.4.3 Focus Order]',
+    fix2: 'Completed name, role and value for every control (Play reads as “Play, button, plays the video”). [4.1.2 Name, Role, Value]',
+    fix3: 'Every control, including the seek bar, is reachable and operable by keyboard. [2.1.1 Keyboard]',
+    fix4: 'Added aria-pressed to the subtitles toggle and aria-valuenow-style announcements to sliders. [4.1.2]',
+    fix5: 'Gave images alt text that describes their content. [1.1.1 Non-text Content]',
+    explainResultHeading: 'Impact',
+    explainResult: 'The minimum number of operations to press Play drops from 18 to 3. More important than the count: before the fix, the Play button could not even be identified by sound — the task was effectively impossible.',
+    footerNote: 'Quorzana is a fictional streaming service created for this demo. It has no relation to any real service, title, or advertiser.',
+    simStartBefore: 'BEFORE player. Mission: press the Play button.',
+    simStartAfter: 'AFTER player. Mission: press the Play button.',
+    simEdge: '(end of page)',
+    simEdgeTop: '(top of page)',
+    simNoAction: '(nothing happened)',
+    simSuccess: 'Video playing. Mission complete!',
+    subOn: 'on', subOff: 'off'
+  }
+};
+
+/* =============================================================
+ * simulated focus sequences
+ * BEFORE: 18 items, Play is #18, seek bar absent (unreachable)
+ * AFTER : 13 items, Play is #3
+ * strings follow VoiceOver grammar: "label, role, state, hint"
+ * ============================================================= */
+var SEQ = {
+  before: [
+    { el: 'm-ad',       ja: '広告枠のサンプル表示です', en: 'Sample ad placeholder' },
+    { el: 'm-hexa',     ja: '画像', en: 'image' },
+    { el: 'm-hexb',     ja: '画像', en: 'image' },
+    { el: 'm-search',   ja: 'ボタン', en: 'button' },
+    { el: 'm-account',  ja: 'ボタン', en: 'button' },
+    { el: 'm-wordmark', ja: 'QUORZANA', en: 'QUORZANA' },
+    { el: 'm-thumb1',   ja: 'img_0342.jpg、画像', en: 'img_0342.jpg, image' },
+    { el: 'm-thumb2',   ja: 'img_0343.jpg、画像', en: 'img_0343.jpg, image' },
+    { el: 'm-thumb3',   ja: 'thumb_final_v2.png、画像', en: 'thumb_final_v2.png, image' },
+    { el: 'm-thumb4',   ja: 'IMG_1108.jpg、画像', en: 'IMG_1108.jpg, image' },
+    { el: 'm-title1',   ja: 'Untitled Series', en: 'Untitled Series' },
+    { el: 'm-title2',   ja: 'Sample Feature', en: 'Sample Feature' },
+    { el: 'm-title3',   ja: 'Placeholder Story', en: 'Placeholder Story' },
+    { el: 'm-title4',   ja: 'Draft Episode', en: 'Draft Episode' },
+    { el: 'm-volume',   ja: 'スライダー', en: 'slider' },
+    { el: 'm-subtitle', ja: '字幕、ボタン', en: 'subtitles, button', act: 'subtitle-broken' },
+    { el: 'm-quality',  ja: 'ボタン', en: 'button' },
+    { el: 'm-play',     ja: 'ボタン', en: 'button', act: 'play' }
+  ],
+  after: [
+    { el: 'm-logo',     ja: 'QUORZANA、ホーム、リンク', en: 'QUORZANA, home, link' },
+    { el: 'm-heading',  ja: 'Chapter 01、見出し レベル2', en: 'Chapter 01, heading level 2' },
+    { el: 'm-play',     ja: '再生、ボタン、動画を再生します', en: 'Play, button, plays the video', act: 'play' },
+    { el: 'm-seek',     ja: '再生位置、スライダー、4分12秒／24分0秒', en: 'Playback position, slider, 4 minutes 12 seconds of 24 minutes' },
+    { el: 'm-volume',   ja: '音量、スライダー、70パーセント', en: 'Volume, slider, 70 percent' },
+    { el: 'm-subtitle', ja: null, en: null, act: 'subtitle-fixed' },
+    { el: 'm-quality',  ja: '画質設定、ボタン、現在の画質: 自動', en: 'Quality settings, button, current quality: auto' },
+    { el: 'm-next',     ja: '次のエピソード Chapter 02、ボタン', en: 'Next episode Chapter 02, button' },
+    { el: 'm-card1',    ja: '金色の六角形パターンの抽象イラスト、Untitled Series、31分、リンク', en: 'Abstract illustration with gold hexagon pattern, Untitled Series, 31 minutes, link' },
+    { el: 'm-card2',    ja: '紫の斜めストライプの抽象イラスト、Sample Feature、48分、リンク', en: 'Abstract illustration with purple diagonal stripes, Sample Feature, 48 minutes, link' },
+    { el: 'm-card3',    ja: 'ドット模様のグラデーションの抽象イラスト、Placeholder Story、19分、リンク', en: 'Abstract illustration with dotted gradient, Placeholder Story, 19 minutes, link' },
+    { el: 'm-card4',    ja: '横縞パターンの抽象イラスト、Draft Episode、22分、リンク', en: 'Abstract illustration with horizontal stripes, Draft Episode, 22 minutes, link' },
+    { el: 'm-ad',       ja: '広告、サンプル広告プレースホルダー', en: 'Advertisement, sample ad placeholder' }
+  ]
+};
+
+/* =============================================================
+ * state
+ * ============================================================= */
+var state = {
+  lang: 'ja',
+  mode: 'before',
+  idx: 0,
+  subOn: false,
+  speechOn: false,
+  runs: {
+    before: { ops: 0, startTs: null, ms: null, done: false },
+    after:  { ops: 0, startTs: null, ms: null, done: false }
+  },
+  simActive: false
+};
+
+function t(key) { return I18N[state.lang][key]; }
+function $(id) { return document.getElementById(id); }
+
+/* =============================================================
+ * i18n rendering
+ * ============================================================= */
+function renderLang() {
+  document.documentElement.lang = state.lang;
+  document.title = t('docTitle');
+  var nodes = document.querySelectorAll('[data-i18n]');
+  for (var i = 0; i < nodes.length; i++) {
+    var key = nodes[i].getAttribute('data-i18n');
+    if (I18N[state.lang][key] !== undefined) nodes[i].textContent = I18N[state.lang][key];
+  }
+  var stage = $('stage');
+  stage.setAttribute('aria-roledescription', t('stageRoleDesc'));
+  stage.setAttribute('aria-label', t('stageAriaLabel'));
+  $('lang-ja').setAttribute('aria-pressed', String(state.lang === 'ja'));
+  $('lang-en').setAttribute('aria-pressed', String(state.lang === 'en'));
+  if (state.simActive && currentRun().done) refreshCompletePanelText();
+}
+
+/* =============================================================
+ * caption bar + optional speech (Web Speech API)
+ * ============================================================= */
+function announce(text) {
+  var h1 = $('cap-hist1'), h2 = $('cap-hist2'), cur = $('cap-cur');
+  if (cur.textContent) {
+    h1.textContent = h2.textContent || ' ';
+    h2.textContent = cur.textContent;
+  }
+  cur.textContent = text;
+  if (state.speechOn && 'speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = state.lang === 'ja' ? 'ja-JP' : 'en-US';
+      window.speechSynthesis.speak(u);
+    } catch (e) { /* speech is best-effort */ }
+  }
+}
+
+/* =============================================================
+ * pseudo focus ring
+ * ============================================================= */
+function moveRing(elId) {
+  var target = $(elId);
+  var stage = $('stage');
+  var ring = $('sim-ring');
+  if (!target) { ring.style.display = 'none'; return; }
+  var tr = target.getBoundingClientRect();
+  var sr = stage.getBoundingClientRect();
+  ring.style.display = 'block';
+  ring.style.top = (tr.top - sr.top - 5) + 'px';
+  ring.style.left = (tr.left - sr.left - 5) + 'px';
+  ring.style.width = (tr.width + 4) + 'px';
+  ring.style.height = (tr.height + 4) + 'px';
+}
+
+/* =============================================================
+ * simulator state machine
+ * ============================================================= */
+function itemText(item) {
+  if (item.act === 'subtitle-fixed') {
+    var s = state.subOn ? t('subOn') : t('subOff');
+    return state.lang === 'ja'
+      ? ('字幕、切り替えボタン、' + s)
+      : ('Subtitles, toggle button, ' + s);
+  }
+  return state.lang === 'ja' ? item.ja : item.en;
+}
+
+function currentSeq() { return SEQ[state.mode]; }
+function currentRun() { return state.runs[state.mode]; }
+
+function countOp() {
+  var run = currentRun();
+  if (run.done) return;
+  run.ops += 1;
+  if (run.startTs === null) run.startTs = Date.now();
+}
+
+function announceCurrent() {
+  var item = currentSeq()[state.idx];
+  moveRing(item.el);
+  announce(itemText(item));
+}
+
+function simMove(delta) {
+  if (currentRun().done) return;
+  countOp();
+  var seq = currentSeq();
+  var next = state.idx + delta;
+  if (next < 0) {
+    announce(t('simEdgeTop') + ' ' + itemText(seq[0]));
+    state.idx = 0; moveRing(seq[0].el);
+    return;
+  }
+  if (next >= seq.length) {
+    announce(t('simEdge') + ' ' + itemText(seq[seq.length - 1]));
+    state.idx = seq.length - 1; moveRing(seq[state.idx].el);
+    return;
+  }
+  state.idx = next;
+  announceCurrent();
+}
+
+function simActivate() {
+  var run = currentRun();
+  if (run.done) return;
+  countOp();
+  var item = currentSeq()[state.idx];
+  if (item.act === 'play') {
+    run.done = true;
+    run.ms = run.startTs === null ? 0 : (Date.now() - run.startTs);
+    setPlayingVisual(true);
+    announce(t('simSuccess'));
+    showCompletePanel();
+    return;
+  }
+  if (item.act === 'subtitle-broken') {
+    state.subOn = !state.subOn;
+    setSubtitleVisual();
+    /* the broken toggle re-announces the same string: state is not conveyed */
+    announce(itemText(item));
+    return;
+  }
+  if (item.act === 'subtitle-fixed') {
+    state.subOn = !state.subOn;
+    setSubtitleVisual();
+    announce(itemText(item));
+    return;
+  }
+  announce(t('simNoAction') + ' ' + itemText(item));
+}
+
+function setSubtitleVisual() {
+  $('m-subtitle').classList.toggle('is-on', state.subOn);
+}
+
+function setPlayingVisual(playing) {
+  $('m-playicon').innerHTML = playing
+    ? '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>'
+    : '<polygon points="7,4 20,12 7,20"></polygon>';
+}
+
+function startMode(mode, focusStage) {
+  state.mode = mode;
+  state.idx = 0;
+  state.subOn = false;
+  setSubtitleVisual();
+  setPlayingVisual(false);
+  state.runs[mode] = { ops: 0, startTs: null, ms: null, done: false };
+  $('seg-before').setAttribute('aria-pressed', String(mode === 'before'));
+  $('seg-after').setAttribute('aria-pressed', String(mode === 'after'));
+  $('complete-panel').hidden = true;
+  announce(mode === 'before' ? t('simStartBefore') : t('simStartAfter'));
+  /* the first item is announced right away, so reaching Play costs exactly
+     17 arrows + Enter = 18 ops (BEFORE) / 2 arrows + Enter = 3 ops (AFTER) */
+  window.setTimeout(function () { announceCurrent(); }, 700);
+  if (focusStage) $('stage').focus();
+}
+
+/* =============================================================
+ * completion + results
+ * ============================================================= */
+function fmtSec(ms) { return (Math.round(ms / 100) / 10).toFixed(1); }
+
+function refreshCompletePanelText() {
+  var run = currentRun();
+  if (!run.done) return;
+  $('complete-title').textContent = state.mode === 'before' ? t('doneBefore') : t('doneAfter');
+  $('stat-ops').textContent = String(run.ops);
+  $('stat-time').textContent = fmtSec(run.ms);
+  var other = state.mode === 'before' ? 'after' : 'before';
+  var btn = $('btn-next-step');
+  if (!state.runs[other].done) {
+    $('complete-hint').textContent = state.mode === 'before' ? t('hintAfterBefore') : t('hintNeedBefore');
+    btn.textContent = state.mode === 'before' ? t('toAfterBtn') : t('toBeforeBtn');
+    btn.dataset.go = other;
+  } else {
+    $('complete-hint').textContent = t('hintAfterAfter');
+    btn.textContent = t('toResultBtn');
+    btn.dataset.go = 'result';
+  }
+}
+
+function showCompletePanel() {
+  refreshCompletePanelText();
+  $('complete-panel').hidden = false;
+  window.setTimeout(function () { $('complete-title').focus(); }, 900);
+}
+
+function showScreen(id) {
+  $('screen-intro').hidden = id !== 'screen-intro';
+  $('screen-sim').hidden = id !== 'screen-sim';
+  $('screen-result').hidden = id !== 'screen-result';
+  $('captionbar').hidden = id !== 'screen-sim';
+  state.simActive = id === 'screen-sim';
+}
+
+function showResult() {
+  showScreen('screen-result');
+  var b = state.runs.before, a = state.runs.after;
+  $('res-before-ops').textContent = b.done ? b.ops + t('opsUnit') : '—';
+  $('res-before-time').textContent = b.done ? fmtSec(b.ms) + t('secUnit') : '—';
+  $('res-after-ops').textContent = a.done ? a.ops + t('opsUnit') : '—';
+  $('res-after-time').textContent = a.done ? fmtSec(a.ms) + t('secUnit') : '—';
+  $('result-heading').focus();
+}
+
+/* =============================================================
+ * event wiring
+ * ============================================================= */
+$('lang-ja').addEventListener('click', function () { state.lang = 'ja'; renderLang(); });
+$('lang-en').addEventListener('click', function () { state.lang = 'en'; renderLang(); });
+
+$('btn-start').addEventListener('click', function () {
+  showScreen('screen-sim');
+  startMode('before', true);
+});
+
+$('seg-before').addEventListener('click', function () { startMode('before', true); });
+$('seg-after').addEventListener('click', function () { startMode('after', true); });
+
+$('toggle-blur').addEventListener('click', function () {
+  var pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed', String(!pressed));
+  $('stage').classList.toggle('revealed', !pressed);
+});
+
+$('toggle-speech').addEventListener('click', function () {
+  var pressed = this.getAttribute('aria-pressed') === 'true';
+  this.setAttribute('aria-pressed', String(!pressed));
+  state.speechOn = !pressed;
+  if (!state.speechOn && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+});
+
+$('btn-next-step').addEventListener('click', function () {
+  var go = this.dataset.go;
+  if (go === 'result') { showResult(); return; }
+  startMode(go, true);
+});
+
+$('btn-redo').addEventListener('click', function () { startMode(state.mode, true); });
+
+$('btn-retry').addEventListener('click', function () {
+  state.runs.before = { ops: 0, startTs: null, ms: null, done: false };
+  state.runs.after = { ops: 0, startTs: null, ms: null, done: false };
+  showScreen('screen-intro');
+  $('intro-heading').focus();
+});
+
+/* keyboard: the stage is a role=application widget, so arrow keys reach us
+   even when a real screen reader is running */
+$('stage').addEventListener('keydown', function (ev) {
+  if (ev.key === 'ArrowRight') { ev.preventDefault(); simMove(1); }
+  else if (ev.key === 'ArrowLeft') { ev.preventDefault(); simMove(-1); }
+  else if (ev.key === 'Enter') { ev.preventDefault(); simActivate(); }
+});
+
+/* touch: horizontal swipe = move, double-tap = activate (VoiceOver-style) */
+(function () {
+  var stage = $('stage');
+  var sx = 0, sy = 0, st = 0, lastTap = 0;
+  stage.style.touchAction = 'pan-y';
+  stage.addEventListener('touchstart', function (ev) {
+    if (ev.touches.length !== 1) return;
+    sx = ev.touches[0].clientX; sy = ev.touches[0].clientY; st = Date.now();
+  }, { passive: true });
+  stage.addEventListener('touchend', function (ev) {
+    var touch = ev.changedTouches[0];
+    var dx = touch.clientX - sx, dy = touch.clientY - sy, dt = Date.now() - st;
+    if (Math.abs(dx) > 44 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      ev.preventDefault();
+      simMove(dx > 0 ? 1 : -1);
+      return;
+    }
+    if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && dt < 280) {
+      var now = Date.now();
+      if (now - lastTap < 320) { ev.preventDefault(); simActivate(); lastTap = 0; }
+      else { lastTap = now; }
+    }
+  });
+})();
+
+/* keep the pseudo focus ring aligned on resize */
+window.addEventListener('resize', function () {
+  if (!state.simActive) return;
+  var item = currentSeq()[state.idx];
+  if (item) moveRing(item.el);
+});
+
+renderLang();
+</script>
+</body>
+</html>
