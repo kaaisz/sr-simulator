@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "@axe-core/cli": "^4.12.1",
+    "serve": "^14.2.6"
+  }
+}
