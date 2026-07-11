@@ -360,6 +360,8 @@ td.win { color: var(--ok); font-weight: 700; }
       <p class="muted" data-i18n="missionHow">操作：→ 次の要素へ ／ ← 前の要素へ ／ Enter 決定。タッチ端末では左右スワイプ＋ダブルタップ。読み上げ内容は画面下部の字幕バーに表示されます。</p>
     </div>
 
+    <p class="muted" data-i18n="audioNote">音声読み上げは初期状態でONになっているため、下のボタンを押すとすぐに音声が再生されます。シミュレータ内の「音声読み上げ」トグルでいつでもOFFにできます。</p>
+
     <div class="btn-row">
       <button type="button" class="btn btn-primary" id="btn-start" data-i18n="startBtn">体験をはじめる（改善前から）</button>
       <a class="btn" href="#explanation" data-i18n="skipBtn">スキップして解説を読む</a>
@@ -381,7 +383,7 @@ td.win { color: var(--ok); font-weight: 700; }
       </div>
       <div class="group">
         <button type="button" class="toggle" id="toggle-blur" aria-pressed="false" data-i18n="blurToggle">ブラーを外して見る（種明かし）</button>
-        <button type="button" class="toggle" id="toggle-speech" aria-pressed="false" data-i18n="speechToggle">音声読み上げ</button>
+        <button type="button" class="toggle" id="toggle-speech" aria-pressed="true" data-i18n="speechToggle">音声読み上げ</button>
       </div>
     </div>
 
@@ -607,6 +609,7 @@ var I18N = {
     missionBody: 'このプレイヤーで「再生」ボタンを押してください。ただし、画面は見えません。',
     missionShort: '「再生」ボタンを押す（→ ← で移動、Enter で決定）',
     missionHow: '操作：→ 次の要素へ ／ ← 前の要素へ ／ Enter 決定。タッチ端末では左右スワイプ＋ダブルタップ。読み上げ内容は画面下部の字幕バーに表示されます。',
+    audioNote: '音声読み上げは初期状態でONになっているため、下のボタンを押すとすぐに音声が再生されます。シミュレータ内の「音声読み上げ」トグルでいつでもOFFにできます。',
     startBtn: '体験をはじめる（改善前から）',
     skipBtn: 'スキップして解説を読む',
     simHeading: '疑似スクリーンリーダー体験',
@@ -691,6 +694,7 @@ var I18N = {
     missionBody: 'Press the “Play” button in this player. The catch: you cannot see the screen.',
     missionShort: 'Press the “Play” button (→ ← to move, Enter to activate)',
     missionHow: 'Controls: → next element / ← previous element / Enter to activate. On touch devices, swipe left/right and double-tap. The simulated speech appears in the caption bar at the bottom.',
+    audioNote: 'Speech output is on by default, so audio will start playing as soon as you click below. You can turn it off anytime with the Speech output toggle in the simulator.',
     startBtn: 'Start the experience (BEFORE first)',
     skipBtn: 'Skip to the explanation',
     simHeading: 'Simulated screen reader experience',
@@ -815,7 +819,7 @@ var state = {
   mode: 'before',
   idx: 0,
   subOn: false,
-  speechOn: false,
+  speechOn: true,
   runs: {
     before: { ops: 0, startTs: null, ms: null, done: false },
     after:  { ops: 0, startTs: null, ms: null, done: false }
